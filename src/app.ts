@@ -136,14 +136,17 @@ app.openapi(analyzeTicketRoute, async (c) => {
       console.error('Verbose Error Properties:\n', JSON.stringify(endpointProperties, null, 2));
     }
 
+    const errorDetails = [
+      `Message: ${errorInstance.message || 'Unknown error'}`,
+      `Stack: ${errorInstance.stack || 'No stack trace available'}`
+    ];
+    if (errorInstance.cause) {
+      errorDetails.push(`Cause: ${String(errorInstance.cause)}`);
+    }
+
     return c.json({
       error: errorInstance.message || 'Internal Server Error',
-      details: {
-        message: errorInstance.message,
-        stack: errorInstance.stack,
-        cause: errorInstance.cause,
-        raw: String(errorInstance)
-      }
+      details: errorDetails
     }, 500);
   }
 });
