@@ -14,7 +14,7 @@ let parsedApiKeys: string[] | null = null;
  */
 export function getEnv(overrideEnv?: any) {
   if (!validatedEnv) {
-    const source = overrideEnv || process.env;
+    const source = { ...process.env, ...overrideEnv };
     const parsed = envSchema.safeParse(source);
     if (!parsed.success) {
       console.error('❌ Environment validation failed:', parsed.error.format());
