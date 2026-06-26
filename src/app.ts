@@ -13,7 +13,7 @@ const app = new OpenAPIHono({
       // Classify as 400 (Malformed input / missing fields) or 422 (Semantically invalid)
       const isMissingRequiredOrWrongType = issues.some(
         (issue) =>
-          (issue.code === 'invalid_type' && (issue as any).received === 'undefined') ||
+          issue.code === 'invalid_type' ||
           issue.code === 'invalid_union' ||
           issue.code === 'unrecognized_keys'
       );
