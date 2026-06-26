@@ -4,7 +4,15 @@ import { TicketResponseSchema } from '../schemas/ticket-response.schema.js';
 
 const ErrorResponseSchema = z.object({
   error: z.string().openapi({ example: 'Malformed input: Missing required fields' }),
-  details: z.array(z.string()).optional().openapi({ example: ['complaint: Required'] }),
+  details: z.union([
+    z.array(z.string()),
+    z.object({
+      message: z.string(),
+      stack: z.string().optional(),
+      cause: z.unknown().optional(),
+      raw: z.string()
+    })
+  ]).optional().openapi({ example: ['complaint: Required'] }),
 }).openapi('ErrorResponse');
 
 export const analyzeTicketRoute = createRoute({

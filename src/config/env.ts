@@ -18,7 +18,7 @@ export function getEnv(overrideEnv?: any) {
     const parsed = envSchema.safeParse(source);
     if (!parsed.success) {
       console.error('❌ Environment validation failed:', parsed.error.format());
-      throw new Error('Missing or invalid environment variables. Ensure GEMINI_API_KEY is defined in .dev.vars or environment.');
+      throw new Error('Missing or invalid environment variables. Ensure GEMINI_API_KEY is defined in .env or environment.');
     }
     validatedEnv = parsed.data;
   }

@@ -45,7 +45,7 @@ app.use('*', async (c, next) => {
     try {
       const cloned = c.req.raw.clone();
       bodyText = await cloned.text();
-    } catch (_) {}
+    } catch (_) { }
   }
 
   console.log(`📥 [Incoming Request] ${method} ${url}`);
@@ -90,7 +90,7 @@ app.onError((err, c) => {
         properties[key] = (err as any)[key];
       }
     }
-  } catch (_) {}
+  } catch (_) { }
   if (Object.keys(properties).length > 0) {
     console.error('Verbose Error Properties:\n', JSON.stringify(properties, null, 2));
   }
@@ -99,12 +99,6 @@ app.onError((err, c) => {
   return c.json(
     {
       error: 'Internal Server Error',
-      details: err instanceof Error ? {
-        message: err.message,
-        stack: err.stack,
-        cause: err.cause,
-        raw: String(err)
-      } : String(err)
     },
     500
   );
@@ -137,7 +131,7 @@ app.openapi(analyzeTicketRoute, async (c) => {
           endpointProperties[key] = (errorInstance as any)[key];
         }
       }
-    } catch (_) {}
+    } catch (_) { }
     if (Object.keys(endpointProperties).length > 0) {
       console.error('Verbose Error Properties:\n', JSON.stringify(endpointProperties, null, 2));
     }
