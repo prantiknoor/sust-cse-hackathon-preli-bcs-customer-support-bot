@@ -9,9 +9,9 @@ import {
 
 export const TransactionEntrySchema = z.object({
   transaction_id: z.string().openapi({ example: 'TXN123456789' }),
-  timestamp: z.string().datetime().openapi({ example: '2026-06-26T20:13:11.000Z' }),
+  timestamp: z.iso.datetime().openapi({ example: '2026-06-26T20:13:11.000Z' }),
   type: TransactionTypeSchema,
-  amount: z.number().openapi({ example: 1500.00 }),
+  amount: z.number().positive().openapi({ example: 1500.00 }),
   counterparty: z.string().openapi({ example: 'Merchant Store' }),
   status: TransactionStatusSchema,
 }).openapi('TransactionEntry', {
