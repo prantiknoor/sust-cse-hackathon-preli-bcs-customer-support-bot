@@ -3,6 +3,8 @@
   "name": "bcs-sust-cse-carnival-hackathon-preli-support-bot",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-26",
+  "workers_dev": true,
+  "preview_urls": true,
   "compatibility_flags": [
     "nodejs_compat"
   ],
