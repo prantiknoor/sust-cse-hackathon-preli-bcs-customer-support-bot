@@ -1,0 +1,9 @@
+node_modules
+.wrangler
+.git
+.idea
+dist
+.env
+.dev.vars
+Dockerfile
+docker-compose.yml
