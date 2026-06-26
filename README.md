@@ -98,14 +98,66 @@ A successful analysis returns a `200 OK` response with a structured JSON object 
 
 ---
 
-## AI/Model Usage
+## AI/Model Usage & Orchestration
 
-QueueStorm Investigator leverages the official Google `@google/genai` SDK to execute robust analysis tasks:
+QueueStorm Investigator employs a dual-model orchestration strategy for optimal latency, compliance, and reliability:
 
-- **Model Selection:** Defaults to `gemma-4-31b-it` due to its generous rate limit profiles, with dynamic support for switching to `gemini-2.5-flash` via the `GEMINI_MODEL` environment variable.
-- **Structured JSON Schema:** Uses Hono's Zod-OpenAPI integration to generate OpenAPI specs and enforces strict JSON responses by passing `responseJsonSchema` (derived via Zod schema translation) directly to `ai.models.generateContent`.
-- **Low-Temperature Control:** Uses a `temperature: 0.2` setting to maintain consistency, reliability, and deter model hallucinations.
-- **Few-Shot Learning:** Embedded few-shot scenarios (`SAMPLE_CASES`) are formatted into the system instructions to pre-program target behaviors, tone, and verdict logic before runtime processing.
+- **Primary Model (Cloudflare Workers AI)**: By default, if deployed on Cloudflare Workers or running via Wrangler, the system utilizes `@cf/meta/llama-3.1-8b-instruct-fast` running on serverless GPUs.
+  - **Structured JSON Mode**: Uses Cloudflare's native `json_schema` constraint validation to enforce JSON responses conforming exactly to the Zod contract schema.
+  - **Truncation Prevention**: Enforces a `max_tokens: 1024` generation window to support full object serialization.
+- **Fallback Model (Google Gemini)**: If the Workers AI binding is missing (such as inside a Docker container or standalone Node environment) or if GPU inference encounters a failure, the analyzer seamlessly catches the error and falls back to **Google Gemini** (`gemma-4-31b-it`).
+  - **Structured JSON**: Enforces strict schemas using Hono's Zod-OpenAPI translation via `responseJsonSchema`.
+- **Low-Temperature Control:** Both backends run at `temperature: 0.2` to maintain consistent, reliable, and deterministic outputs.
+- **Few-Shot Learning:** Embedded scenarios (`SAMPLE_CASES`) are pre-programmed directly into the system prompts to teach tone, routing rules, and classification criteria before generation.
+
+---
+
+## Containerization & Deployment
+
+The application is fully containerized and can run natively as a Node.js server using `@hono/node-server`.
+
+### 1. Run via Docker Compose (Recommended)
+This automatically builds the image and mounts the local `.env` variables:
+```bash
+docker-compose up --build
+```
+The server will start on port `8000` (e.g. `http://localhost:8000`).
+
+### 2. Manual Docker Deployment
+1. **Build Image**:
+   ```bash
+   docker build . -t support-bot
+   ```
+2. **Run Container**:
+   Pass your local environment file via the `--env-file` argument:
+   ```bash
+   docker run --rm -d --name test-support-bot -p 8000:8000 --env-file .env support-bot
+   ```
+
+*Note: Since the standalone Node/Docker container runs outside of wrangler/miniflare, it will automatically route all requests to the **Gemini API fallback**.*
+
+---
+
+## Running Verification & Tests
+
+### 1. Cloudflare Workers Unit Tests (Vitest)
+Executes Hono request test suites against the simulated Workers runtime:
+```bash
+pnpm exec vitest run
+```
+
+### 2. Run Test Harness against Local Wrangler
+Starts wrangler development server and runs the concurrent test suite:
+```bash
+pnpm dev
+pnpm test
+```
+
+### 3. Run Test Harness against Docker Container
+Verify the containerized deployment by pointing the test harness to port `8000`:
+```bash
+pnpm test http://localhost:8000
+```
 
 ---
 
@@ -121,7 +173,7 @@ The service implements multi-tier defensive guardrails that do not rely solely o
      - Promotes all `phishing_or_social_engineering` cases to `critical` severity.
      - Routes all agent-side complaints (`user_type === 'agent'` or `channel === 'field_agent'`) directly to the `agent_operations` department.
      - Routes all merchant-side complaints directly to the `merchant_operations` department.
-3. **Key Rotation & Rate Limiting:**
+3. **Key Rotation & Rate Limiting (Gemini fallback):**
    - Evaluates API key health and implements client-side round-robin rotation over comma-separated keys.
    - Throttles requests automatically (at 15 RPM per key) to prevent key starvation and API rate-limiting errors.
 4. **Resiliency & Timeout Rules:**
@@ -132,10 +184,10 @@ The service implements multi-tier defensive guardrails that do not rely solely o
 
 ## Limitations
 
-- **API Rate Limits:** The system is fundamentally bounded by the configured Gemini API key quotas. Rotated key setups can alleviate this, but standard/free tiers are capped.
+- **API Rate Limits:** The fallback system is fundamentally bounded by the configured Gemini API key quotas. Rotated key setups can alleviate this, but standard/free tiers are capped.
 - **Context Limits:** Large transaction logs can hit prompt token limits and negatively impact worker latency and processing cost.
 - **Input Structure Dependencies:** Analysis quality relies on structured transaction data. If `transaction_history` is empty or missing, the system will output an `insufficient_data` evidence verdict.
-- **Language Scope:** While customer replies adapt to the incoming request language (supporting English and Bengali/Bangla), agent summaries, reason codes, and next actions are strictly generated in English.
+- **Language Scope:** Customer replies adapt to the incoming request language (supporting English and Bengali/Bangla), but agent summaries, reason codes, and next actions are strictly generated in English.
 - **Stateless Boundaries:** The API processes tickets in isolation. It does not track state across multiple interactions or query historical customer tickets unless provided in the request payload.
 - **Ambiguous Matches:** Multiple matching transactions in history trigger an automatic `insufficient_data` verdict and require a human operator (`human_review_required: true`) to resolve the ambiguity.
 
