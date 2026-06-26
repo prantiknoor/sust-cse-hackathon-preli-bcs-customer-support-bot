@@ -1,4 +1,6 @@
 allowBuilds:
-  esbuild: set this to true or false
-  sharp: set this to true or false
-  workerd: set this to true or false
+  '@google/genai': true
+  esbuild: true
+  protobufjs: true
+  sharp: true
+  workerd: true
