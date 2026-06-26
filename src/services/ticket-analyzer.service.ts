@@ -434,6 +434,7 @@ async function analyzeTicketInner(request: TicketRequest, overrideEnv?: any): Pr
 
       if (isTransient && attempts < maxAttempts) {
         console.warn(`⚠️ Transient LLM error (attempt ${attempts}/${maxAttempts}): ${errorMsg}. Retrying in 2s...`);
+        console.warn('Stack Trace:\n', (e as Error).stack);
         await new Promise((resolve) => setTimeout(resolve, 2000));
         continue;
       }

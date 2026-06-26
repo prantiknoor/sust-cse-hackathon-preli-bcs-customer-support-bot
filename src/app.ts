@@ -52,13 +52,26 @@ app.onError((err, c) => {
     );
   }
 
-  // Log the complete error stack trace and cause details to the console
-  console.error('Unhandled System Error:', err);
+  // Log the complete error stack trace, cause details, and properties to the console
+  console.error(`❌ [Unhandled Server Error] ${c.req.method} ${c.req.url}:`, err);
   if (err instanceof Error) {
     console.error('Stack Trace:\n', err.stack);
     if (err.cause) {
       console.error('Error Cause:\n', err.cause);
     }
+  }
+
+  // Print all properties of the error object for verbose debugging
+  const properties: Record<string, any> = {};
+  try {
+    for (const key of Object.getOwnPropertyNames(err)) {
+      if (key !== 'stack' && key !== 'message') {
+        properties[key] = (err as any)[key];
+      }
+    }
+  } catch (_) {}
+  if (Object.keys(properties).length > 0) {
+    console.error('Verbose Error Properties:\n', JSON.stringify(properties, null, 2));
   }
 
   // Return a clean non-sensitive 500 response
@@ -88,11 +101,26 @@ app.openapi(analyzeTicketRoute, async (c) => {
     return c.json(result, 200);
   } catch (e) {
     const errorInstance = e as Error;
-    console.error('Endpoint Error:', errorInstance);
+    console.error(`❌ [Server Error] /analyze-ticket failed for request:\n`, JSON.stringify(body, null, 2));
+    console.error('Error Message:', errorInstance.message);
     console.error('Stack Trace:\n', errorInstance.stack);
     if (errorInstance.cause) {
       console.error('Error Cause:\n', errorInstance.cause);
     }
+
+    // Print all properties of the error object for verbose debugging
+    const endpointProperties: Record<string, any> = {};
+    try {
+      for (const key of Object.getOwnPropertyNames(errorInstance)) {
+        if (key !== 'stack' && key !== 'message') {
+          endpointProperties[key] = (errorInstance as any)[key];
+        }
+      }
+    } catch (_) {}
+    if (Object.keys(endpointProperties).length > 0) {
+      console.error('Verbose Error Properties:\n', JSON.stringify(endpointProperties, null, 2));
+    }
+
     return c.json({
       error: errorInstance.message || 'Internal Server Error',
       details: {
