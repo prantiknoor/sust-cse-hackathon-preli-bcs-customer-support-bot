@@ -52,13 +52,25 @@ app.onError((err, c) => {
     );
   }
 
-  // Securely log the error internally (do not expose to client)
+  // Log the complete error stack trace and cause details to the console
   console.error('Unhandled System Error:', err);
+  if (err instanceof Error) {
+    console.error('Stack Trace:\n', err.stack);
+    if (err.cause) {
+      console.error('Error Cause:\n', err.cause);
+    }
+  }
 
   // Return a clean non-sensitive 500 response
   return c.json(
     {
       error: 'Internal Server Error',
+      details: err instanceof Error ? {
+        message: err.message,
+        stack: err.stack,
+        cause: err.cause,
+        raw: String(err)
+      } : String(err)
     },
     500
   );
@@ -69,10 +81,28 @@ app.openapi(healthRoute, (c) => {
   return c.json({ status: 'ok' }, 200);
 });
 
-app.openapi(analyzeTicketRoute, (c) => {
+app.openapi(analyzeTicketRoute, async (c) => {
   const body = c.req.valid('json');
-  const result = analyzeTicket(body);
-  return c.json(result, 200);
+  try {
+    const result = await analyzeTicket(body, c.env);
+    return c.json(result, 200);
+  } catch (e) {
+    const errorInstance = e as Error;
+    console.error('Endpoint Error:', errorInstance);
+    console.error('Stack Trace:\n', errorInstance.stack);
+    if (errorInstance.cause) {
+      console.error('Error Cause:\n', errorInstance.cause);
+    }
+    return c.json({
+      error: errorInstance.message || 'Internal Server Error',
+      details: {
+        message: errorInstance.message,
+        stack: errorInstance.stack,
+        cause: errorInstance.cause,
+        raw: String(errorInstance)
+      }
+    }, 500);
+  }
 });
 
 // Expose raw OpenAPI JSON spec
