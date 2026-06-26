@@ -376,9 +376,93 @@ function applyGuardrails(response: TicketResponse, request: TicketRequest): Tick
 async function analyzeTicketInner(request: TicketRequest, overrideEnv?: any): Promise<TicketResponse> {
   const systemPrompt = buildSystemPrompt();
   const userPrompt = buildUserPrompt(request);
-
-  // Convert the Zod schema to JSON Schema for the Gemini structured output
   const jsonSchema = z.toJSONSchema(LLMResponseSchema);
+
+  // 1. Try Workers AI first if the binding is available in overrideEnv
+  const aiBinding = overrideEnv && overrideEnv.AI;
+  if (aiBinding && typeof aiBinding.run === 'function') {
+    try {
+      console.log('🤖 Calling Workers AI default model (@cf/meta/llama-3.1-8b-instruct-fast) in JSON Mode...');
+      const response = await aiBinding.run('@cf/meta/llama-3.1-8b-instruct-fast', {
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.2,
+        max_tokens: 1024,
+        response_format: {
+          type: 'json_schema',
+          json_schema: jsonSchema,
+        }
+      });
+
+      let parsed: any = null;
+      if (response && typeof response === 'object') {
+        if (response.response) {
+          if (typeof response.response === 'object') {
+            parsed = response.response;
+          } else if (typeof response.response === 'string') {
+            const rawText = response.response;
+            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+            const jsonText = jsonMatch ? jsonMatch[0] : rawText;
+            parsed = JSON.parse(jsonText);
+          }
+        } else if (response.result && response.result.response) {
+          if (typeof response.result.response === 'object') {
+            parsed = response.result.response;
+          } else if (typeof response.result.response === 'string') {
+            const rawText = response.result.response;
+            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+            const jsonText = jsonMatch ? jsonMatch[0] : rawText;
+            parsed = JSON.parse(jsonText);
+          }
+        } else if (response.choices && response.choices[0]) {
+          const choice = response.choices[0];
+          if (choice.message && choice.message.content) {
+            const content = choice.message.content;
+            if (typeof content === 'object') {
+              parsed = content;
+            } else {
+              const jsonMatch = content.match(/\{[\s\S]*\}/);
+              const jsonText = jsonMatch ? jsonMatch[0] : content;
+              parsed = JSON.parse(jsonText);
+            }
+          } else if (choice.text) {
+            if (typeof choice.text === 'object') {
+              parsed = choice.text;
+            } else {
+              const jsonMatch = choice.text.match(/\{[\s\S]*\}/);
+              const jsonText = jsonMatch ? jsonMatch[0] : choice.text;
+              parsed = JSON.parse(jsonText);
+            }
+          }
+        }
+      }
+
+      if (!parsed) {
+        throw new Error('Workers AI returned an empty response or could not be parsed');
+      }
+
+      // Force the ticket_id to match the request
+      parsed.ticket_id = request.ticket_id;
+
+      // Clamp confidence to [0, 1] range
+      if (typeof parsed.confidence === 'number') {
+        parsed.confidence = Math.max(0, Math.min(1, parsed.confidence));
+      }
+
+      // Validate response against Zod schema
+      const validated = TicketResponseSchema.parse(parsed);
+
+      console.log('✅ Workers AI analysis completed successfully.');
+      return applyGuardrails(validated, request);
+    } catch (err: any) {
+      console.warn(`⚠️ Workers AI failed (Error: ${err.message}). Falling back to Gemini...`);
+    }
+  }
+
+  // 2. Fall back to Gemini API
+  console.log('🚀 Invoking Gemini API fallback...');
 
   let attempts = 0;
   const maxAttempts = 3;
