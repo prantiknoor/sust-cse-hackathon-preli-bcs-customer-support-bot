@@ -387,6 +387,7 @@ async function analyzeTicketInner(request: TicketRequest, overrideEnv?: any): Pr
     attempts++;
     const ai = await getGeminiClient(overrideEnv);
     const modelName = getEnv(overrideEnv).GEMINI_MODEL || 'gemma-4-31b-it';
+    const startTime = Date.now();
     try {
       const response = await ai.models.generateContent({
         model: modelName,
@@ -398,6 +399,13 @@ async function analyzeTicketInner(request: TicketRequest, overrideEnv?: any): Pr
           temperature: 0.2,  // Low temperature for consistent, deterministic analysis
         },
       });
+
+      const latencyMs = Date.now() - startTime;
+      const inputTokens = response.usageMetadata?.promptTokenCount ?? 0;
+      const outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0;
+      console.log(
+        `📊 [LLM Call Success] Model: ${modelName} | Attempt: ${attempts} | Latency: ${latencyMs}ms | Input Tokens: ${inputTokens} | Output Tokens: ${outputTokens}`
+      );
 
       const rawText = response.text;
       if (!rawText) {
@@ -421,7 +429,12 @@ async function analyzeTicketInner(request: TicketRequest, overrideEnv?: any): Pr
       // Apply deterministic guardrails before returning
       return applyGuardrails(validated, request);
     } catch (e) {
+      const latencyMs = Date.now() - startTime;
       const errorMsg = (e as Error).message || '';
+      console.warn(
+        `⚠️ [LLM Call Failed] Model: ${modelName} | Attempt: ${attempts} | Latency: ${latencyMs}ms | Error: ${errorMsg}`
+      );
+
       const isTransient =
         errorMsg.includes('Retryable') ||
         errorMsg.includes('429') ||

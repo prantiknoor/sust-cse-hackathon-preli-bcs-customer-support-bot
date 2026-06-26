@@ -160,7 +160,7 @@ describe('QueueStorm Investigator API', () => {
         if (mismatchFields.length > 0) {
           console.warn(`[Case ${testCase.id} Mismatch Warn]:\n - ` + mismatchFields.join('\n - '));
         }
-      });
+      }, 60000);
     });
   });
 });
