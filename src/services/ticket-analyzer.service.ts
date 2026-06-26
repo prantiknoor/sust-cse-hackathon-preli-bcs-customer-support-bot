@@ -194,16 +194,30 @@ Return a JSON object matching the provided schema exactly. Ensure all enum value
 }
 
 /**
+ * Translates Unicode Bangla digits (০-৯) into standard English digits (0-9).
+ * Normalizes user numbers to help smaller LLMs resolve transaction matches.
+ */
+function translateBanglaDigits(text: string): string {
+  const banglaDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+  let result = text;
+  for (let i = 0; i < 10; i++) {
+    result = result.replaceAll(banglaDigits[i], String(i));
+  }
+  return result;
+}
+
+/**
  * Builds the user-facing prompt with the actual ticket data.
  */
 function buildUserPrompt(request: TicketRequest): string {
   const txBlock = formatTransactionHistory(request.transaction_history);
+  const normalizedComplaint = translateBanglaDigits(request.complaint);
 
   const parts = [
     `Analyze the following support ticket:`,
     ``,
     `Ticket ID: ${request.ticket_id}`,
-    `Complaint: "${request.complaint}"`,
+    `Complaint: "${normalizedComplaint}"`,
   ];
 
   if (request.language) parts.push(`Language: ${request.language}`);
@@ -257,6 +271,45 @@ function sanitizeText(text: string): string {
  * Applies all guardrails to the LLM response before returning.
  */
 function applyGuardrails(response: TicketResponse, request: TicketRequest): TicketResponse {
+  // Determine evidence_verdict programmatically
+  let evidenceVerdict = response.evidence_verdict;
+  const relTxId = response.relevant_transaction_id;
+
+  if (relTxId === null) {
+    evidenceVerdict = 'insufficient_data';
+  } else {
+    // Find the matching transaction in request.transaction_history
+    const matchingTx = request.transaction_history?.find(tx => tx.transaction_id === relTxId);
+    
+    if (response.case_type === 'wrong_transfer') {
+      // Check for repeated completed transfers to the same recipient (pattern contradiction)
+      if (matchingTx) {
+        const counterparty = matchingTx.counterparty;
+        const otherTransfers = request.transaction_history?.filter(
+          tx => tx.transaction_id !== relTxId &&
+                tx.type === 'transfer' &&
+                tx.status === 'completed' &&
+                tx.counterparty === counterparty
+        );
+        if (otherTransfers && otherTransfers.length > 0) {
+          evidenceVerdict = 'inconsistent';
+        } else {
+          evidenceVerdict = 'consistent';
+        }
+      } else {
+        evidenceVerdict = 'consistent';
+      }
+    } else if (response.case_type === 'payment_failed') {
+      if (matchingTx && matchingTx.status === 'completed') {
+        evidenceVerdict = 'inconsistent';
+      } else {
+        evidenceVerdict = 'consistent';
+      }
+    } else {
+      evidenceVerdict = 'consistent';
+    }
+  }
+
   // Enforce department mapping
   let department = response.department;
 
@@ -297,10 +350,7 @@ function applyGuardrails(response: TicketResponse, request: TicketRequest): Tick
           complaintLower.includes('decline') ||
           complaintLower.includes('dispute') ||
           complaintLower.includes('deny') ||
-          complaintLower.includes('denied') ||
-          response.severity === 'medium' ||
-          response.severity === 'high' ||
-          response.severity === 'critical';
+          complaintLower.includes('denied');
 
         if (isContested) {
           department = 'dispute_resolution';
@@ -327,7 +377,7 @@ function applyGuardrails(response: TicketResponse, request: TicketRequest): Tick
       severity = 'high';
       break;
     case 'wrong_transfer':
-      if (response.evidence_verdict === 'consistent') {
+      if (evidenceVerdict === 'consistent') {
         severity = 'high';
       } else {
         severity = 'medium';
@@ -358,10 +408,26 @@ function applyGuardrails(response: TicketResponse, request: TicketRequest): Tick
       break;
   }
 
+  // Determine human_review_required programmatically
+  let humanReview = response.human_review_required;
+  if (
+    (response.case_type === 'wrong_transfer' && evidenceVerdict !== 'insufficient_data') ||
+    response.case_type === 'phishing_or_social_engineering' ||
+    (response.case_type === 'agent_cash_in_issue' && evidenceVerdict !== 'insufficient_data') ||
+    (response.case_type === 'duplicate_payment' && evidenceVerdict !== 'insufficient_data') ||
+    evidenceVerdict === 'inconsistent'
+  ) {
+    humanReview = true;
+  } else {
+    humanReview = false;
+  }
+
   return {
     ...response,
+    evidence_verdict: evidenceVerdict,
     department,
     severity,
+    human_review_required: humanReview,
     customer_reply: sanitizeText(response.customer_reply),
     recommended_next_action: sanitizeText(response.recommended_next_action),
     // Also sanitize agent_summary for extra safety
