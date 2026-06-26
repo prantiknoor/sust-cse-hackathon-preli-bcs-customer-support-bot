@@ -35,6 +35,27 @@ const app = new OpenAPIHono({
   },
 });
 
+// Custom request logger middleware to dump request method, URL, and payload for debugging
+app.use('*', async (c, next) => {
+  const method = c.req.method;
+  const url = c.req.url;
+
+  let bodyText = '';
+  if (method === 'POST' || method === 'PUT') {
+    try {
+      const cloned = c.req.raw.clone();
+      bodyText = await cloned.text();
+    } catch (_) {}
+  }
+
+  console.log(`📥 [Incoming Request] ${method} ${url}`);
+  if (bodyText) {
+    console.log(`Request Payload:\n${bodyText}`);
+  }
+
+  await next();
+});
+
 app.onError((err, c) => {
   // Catch JSON parsing syntax errors and bad request HTTPExceptions
   const isMalformedInput =
